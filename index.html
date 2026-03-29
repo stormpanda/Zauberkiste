@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🚀 Raketen-Abenteuer!</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #0a0a2e;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        font-family: "Comic Sans MS", "Chalkboard SE", cursive;
+      }
+      canvas {
+        display: block;
+        border-radius: 16px;
+        box-shadow: 0 0 60px #7b2fff88;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <script>
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+
+      // ─── Sounds via Web Audio ───────────────────────────────────────────────────
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      function playBoost() {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.connect(g);
+        g.connect(audioCtx.destination);
+        o.type = "sine";
+        o.frequency.setValueAtTime(400, audioCtx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(
+          800,
+          audioCtx.currentTime + 0.08,
+        );
+        g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+        o.start();
+        o.stop(audioCtx.currentTime + 0.15);
+      }
+
+      function playCrash() {
+        const bufLen = audioCtx.sampleRate * 0.4;
+        const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++)
+          data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.6, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+        src.connect(g);
+        g.connect(audioCtx.destination);
+        src.start();
+      }
+
+      function playCollect() {
+        const freqs = [523, 659, 784];
+        freqs.forEach((f, i) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.type = "triangle";
+          o.frequency.value = f;
+          const t = audioCtx.currentTime + i * 0.08;
+          g.gain.setValueAtTime(0.25, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+          o.start(t);
+          o.stop(t + 0.18);
+        });
+      }
+
+      // ─── Background Music ──────────────────────────────────────────────────────
+      let musicPlaying = false;
+      let musicLoopTimeout = null;
+
+      // Fröhliche Oster-Melodie 🐣
+      const MUSIC_NOTES = [
+        [523, 1],
+        [659, 1],
+        [784, 1],
+        [880, 1],
+        [784, 2],
+        [659, 2],
+        [523, 1],
+        [523, 1],
+        [659, 1],
+        [784, 1],
+        [523, 4],
+        [0, 2],
+        [659, 1],
+        [659, 1],
+        [784, 1],
+        [880, 1],
+        [659, 4],
+        [0, 2],
+        [523, 1],
+        [659, 1],
+        [784, 1],
+        [880, 1],
+        [1047, 2],
+        [784, 2],
+        [880, 1],
+        [784, 1],
+        [659, 1],
+        [523, 1],
+        [784, 2],
+        [659, 2],
+        [523, 1],
+        [523, 1],
+        [659, 1],
+        [523, 4],
+        [0, 4],
+      ];
+      const MUSIC_BEAT = 0.17;
+
+      function startMusic() {
+        if (musicPlaying) return;
+        musicPlaying = true;
+        loopMusic();
+      }
+
+      function loopMusic() {
+        if (!musicPlaying) return;
+        const totalMs =
+          MUSIC_NOTES.reduce((s, [, b]) => s + b, 0) * MUSIC_BEAT * 1000;
+        const masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.07;
+        masterGain.connect(audioCtx.destination);
+        let t = audioCtx.currentTime + 0.05;
+        MUSIC_NOTES.forEach(([freq, beats]) => {
+          if (freq > 0) {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g);
+            g.connect(masterGain);
+            o.type = "square";
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(1, t);
+            g.gain.exponentialRampToValueAtTime(
+              0.001,
+              t + beats * MUSIC_BEAT * 0.82,
+            );
+            o.start(t);
+            o.stop(t + beats * MUSIC_BEAT);
+          }
+          t += beats * MUSIC_BEAT;
+        });
+        musicLoopTimeout = setTimeout(loopMusic, totalMs - 200);
+      }
+
+      function playBunny() {
+        // Festive fanfare: do-mi-sol-DO!
+        const notes = [523, 659, 784, 1047];
+        notes.forEach((f, i) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.type = "triangle";
+          o.frequency.value = f;
+          const t = audioCtx.currentTime + i * 0.1;
+          g.gain.setValueAtTime(0.3, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+          o.start(t);
+          o.stop(t + 0.22);
+        });
+      }
+
+      // ─── Starfield ──────────────────────────────────────────────────────────────
+      const stars = Array.from({ length: 120 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 1.8 + 0.4,
+        speed: Math.random() * 0.8 + 0.2,
+        alpha: Math.random() * 0.7 + 0.3,
+      }));
+
+      // ─── Particles ──────────────────────────────────────────────────────────────
+      let particles = [];
+      function spawnParticles(x, y, color, count = 12) {
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 4 + 1;
+          particles.push({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1,
+            decay: Math.random() * 0.03 + 0.02,
+            r: Math.random() * 5 + 2,
+            color,
+          });
+        }
+      }
+
+      // ─── Game State ─────────────────────────────────────────────────────────────
+      let rocket,
+        obstacles,
+        collectibles,
+        bunnies,
+        score,
+        hiScore,
+        gameState,
+        lastTime,
+        flashTimer,
+        shakeTimer,
+        shakeAmp;
+
+      const GRAVITY = 0.18;
+      const BOOST = -7.5;
+      const FLOOR = canvas.height - 60;
+      const CEILING = 20;
+
+      const OBSTACLE_COLORS = [
+        "#ff6b6b",
+        "#ffa94d",
+        "#ff87ca",
+        "#b197fc",
+        "#69db7c",
+      ];
+      const SHAPES = ["asteroid", "egg", "cloud"];
+      const COLLECT_SYMBOLS = ["⭐", "💎", "🍭"];
+
+      function initGame() {
+        rocket = {
+          x: 120,
+          y: canvas.height / 2,
+          vy: 0,
+          width: 54,
+          height: 34,
+          trail: [],
+          invincible: 0,
+          alive: true,
+        };
+        obstacles = [];
+        collectibles = [];
+        bunnies = [];
+        score = 0;
+        flashTimer = 0;
+        shakeTimer = 0;
+        shakeAmp = 0;
+        gameState = "playing";
+        lastTime = null;
+        startMusic();
+
+        // Stagger obstacle spawning
+        nextObstacleIn = 80;
+        nextCollectIn = 50;
+        nextBunnyIn = 350 + Math.random() * 300;
+        speed = 3.5;
+        distance = 0;
+      }
+
+      let nextObstacleIn, nextCollectIn, nextBunnyIn, speed, distance;
+
+      // ─── Draw Helpers ────────────────────────────────────────────────────────────
+      function drawRocket(rx, ry, alive) {
+        ctx.save();
+        ctx.translate(rx, ry);
+
+        // Tilt based on velocity
+        const tilt = Math.max(-0.4, Math.min(0.4, rocket.vy * 0.04));
+        ctx.rotate(tilt);
+
+        // Flicker when invincible
+        if (rocket.invincible > 0 && Math.floor(Date.now() / 80) % 2 === 0) {
+          ctx.globalAlpha = 0.35;
+        }
+
+        // Body
+        ctx.fillStyle = "#ff6b6b";
+        ctx.beginPath();
+        ctx.moveTo(27, 0);
+        ctx.quadraticCurveTo(36, 0, 36, 10);
+        ctx.lineTo(36, 24);
+        ctx.lineTo(-18, 24);
+        ctx.lineTo(-18, 10);
+        ctx.quadraticCurveTo(-18, 0, -8, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // Nose cone
+        ctx.fillStyle = "#ffd43b";
+        ctx.beginPath();
+        ctx.moveTo(27, 0);
+        ctx.lineTo(56, 12);
+        ctx.lineTo(27, 24);
+        ctx.closePath();
+        ctx.fill();
+
+        // Window
+        ctx.fillStyle = "#74c0fc";
+        ctx.beginPath();
+        ctx.arc(8, 12, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Shine
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        ctx.beginPath();
+        ctx.arc(5, 9, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Fin bottom
+        ctx.fillStyle = "#f03e3e";
+        ctx.beginPath();
+        ctx.moveTo(-18, 24);
+        ctx.lineTo(-30, 42);
+        ctx.lineTo(-10, 28);
+        ctx.closePath();
+        ctx.fill();
+
+        // Fin top
+        ctx.beginPath();
+        ctx.moveTo(-18, 0);
+        ctx.lineTo(-30, -16);
+        ctx.lineTo(-10, 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // ── Mini Osterhase oben auf der Rakete ──
+        // Sitzt mittig auf dem Raketenrücken (y=0 ist Oberkante)
+        ctx.save();
+        ctx.translate(4, -2); // horizontal mittig, direkt auf Oberkante
+
+        // Body
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.ellipse(0, -10, 7, 9, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#d090d0";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Head
+        ctx.beginPath();
+        ctx.arc(0, -22, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Left ear
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.ellipse(-3, -32, 2.2, 6, -0.15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#d090d0";
+        ctx.stroke();
+        ctx.fillStyle = "#ffb3d9";
+        ctx.beginPath();
+        ctx.ellipse(-3, -32, 1, 4, -0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Right ear
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.ellipse(3, -32, 2.2, 6, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#d090d0";
+        ctx.stroke();
+        ctx.fillStyle = "#ffb3d9";
+        ctx.beginPath();
+        ctx.ellipse(3, -32, 1, 4, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = "#5c2d91";
+        ctx.beginPath();
+        ctx.arc(-2.2, -23, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(2.2, -23, 1.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Nose
+        ctx.fillStyle = "#ff87b2";
+        ctx.beginPath();
+        ctx.arc(0, -20.5, 1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Scarf (Osterschal in Gelb)
+        ctx.fillStyle = "#ffd43b";
+        ctx.beginPath();
+        ctx.ellipse(0, -16, 7, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      function drawFlame(rx, ry) {
+        const t = Date.now();
+        const flicker = Math.sin(t / 30) * 4;
+        ctx.save();
+        ctx.translate(rx - 18, ry + 12);
+        // Outer flame
+        const grd = ctx.createRadialGradient(-8, 0, 1, -8, 0, 22 + flicker);
+        grd.addColorStop(0, "#fff");
+        grd.addColorStop(0.3, "#ffa94d");
+        grd.addColorStop(0.7, "#ff6b6b");
+        grd.addColorStop(1, "rgba(255,100,0,0)");
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.ellipse(-8, 0, 10, 22 + flicker, Math.PI / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawCookedEgg(rx, ry) {
+        ctx.save();
+        ctx.translate(rx + 18, ry + 12);
+        // Egg white (wobbly from the crash!)
+        ctx.fillStyle = "#fffde7";
+        ctx.beginPath();
+        ctx.ellipse(0, 6, 28, 17, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#f0c040";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Yolk
+        const yolkGrd = ctx.createRadialGradient(-3, -1, 0, 0, 0, 11);
+        yolkGrd.addColorStop(0, "#ffe066");
+        yolkGrd.addColorStop(0.6, "#ffa94d");
+        yolkGrd.addColorStop(1, "#e67700");
+        ctx.fillStyle = yolkGrd;
+        ctx.beginPath();
+        ctx.arc(0, 0, 11, 0, Math.PI * 2);
+        ctx.fill();
+        // Shine on yolk
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.beginPath();
+        ctx.arc(-3, -4, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawObstacle(ob) {
+        ctx.save();
+        ctx.translate(ob.x + ob.w / 2, ob.y + ob.h / 2);
+        ctx.rotate(ob.rot);
+
+        if (ob.shape === "asteroid") {
+          ctx.fillStyle = ob.color;
+          ctx.beginPath();
+          const pts = ob.pts;
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.3)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (ob.shape === "egg") {
+          // 🥚 Osterei!
+          const rx = ob.w * 0.44;
+          const ry = ob.h * 0.58;
+          // Egg body
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+          ctx.fillStyle = ob.color;
+          ctx.fill();
+          // Stripe band clipped to egg
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.fillStyle = lighten(ob.color);
+          ctx.fillRect(-rx, -ry * 0.2, rx * 2, ry * 0.4);
+          // Polka dots
+          ctx.fillStyle = "rgba(255,255,255,0.65)";
+          [
+            [-rx * 0.42, 0],
+            [0, 0],
+            [rx * 0.42, 0],
+            [0, -ry * 0.42],
+            [0, ry * 0.42],
+          ].forEach(([dx, dy]) => {
+            ctx.beginPath();
+            ctx.arc(dx, dy, rx * 0.12, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.restore();
+          // Outline
+          ctx.strokeStyle = "rgba(255,255,255,0.4)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          // Shine
+          ctx.fillStyle = "rgba(255,255,255,0.28)";
+          ctx.beginPath();
+          ctx.ellipse(
+            -rx * 0.22,
+            -ry * 0.38,
+            rx * 0.22,
+            ry * 0.13,
+            -0.3,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+        } else {
+          // Cloud / alien ship
+          ctx.fillStyle = ob.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, ob.w / 2, ob.h / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Dome
+          ctx.fillStyle = lighten(ob.color);
+          ctx.beginPath();
+          ctx.ellipse(
+            0,
+            -ob.h * 0.2,
+            ob.w * 0.35,
+            ob.h * 0.35,
+            0,
+            Math.PI,
+            Math.PI * 2,
+          );
+          ctx.fill();
+          // Lights
+          const cols = ["#ffd43b", "#69db7c", "#ff6b6b"];
+          for (let i = -1; i <= 1; i++) {
+            ctx.fillStyle = cols[i + 1];
+            ctx.beginPath();
+            ctx.arc(i * ob.w * 0.25, ob.h * 0.22, 5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
+      function lighten(hex) {
+        let r = parseInt(hex.slice(1, 3), 16);
+        let g = parseInt(hex.slice(3, 5), 16);
+        let b = parseInt(hex.slice(5, 7), 16);
+        r = Math.min(255, r + 70);
+        g = Math.min(255, g + 70);
+        b = Math.min(255, b + 70);
+        return `rgb(${r},${g},${b})`;
+      }
+
+      function drawCollectible(c) {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        const bob = Math.sin(Date.now() / 300 + c.phase) * 5;
+        ctx.translate(0, bob);
+        // Glow
+        const grd = ctx.createRadialGradient(0, 0, 5, 0, 0, 28);
+        grd.addColorStop(0, "rgba(255,215,0,0.5)");
+        grd.addColorStop(1, "rgba(255,215,0,0)");
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(0, 0, 28, 0, Math.PI * 2);
+        ctx.fill();
+        // Symbol
+        ctx.font = "28px serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(c.symbol, 0, 0);
+        ctx.restore();
+      }
+
+      function drawGround() {
+        const grd = ctx.createLinearGradient(0, FLOOR - 10, 0, canvas.height);
+        grd.addColorStop(0, "#4a1d96");
+        grd.addColorStop(0.4, "#2d0f6f");
+        grd.addColorStop(1, "#1a0a40");
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, FLOOR, canvas.width, canvas.height - FLOOR);
+
+        // Surface craters / bumps
+        ctx.fillStyle = "#5a2fa0";
+        for (let i = 0; i < 8; i++) {
+          const cx =
+            (i * 110 + 30 - ((distance * 0.5) % canvas.width) + canvas.width) %
+            canvas.width;
+          ctx.beginPath();
+          ctx.arc(cx, FLOOR + 5, 18 + (i % 3) * 8, 0, Math.PI);
+          ctx.fill();
+        }
+      }
+
+      function drawStars() {
+        stars.forEach((s) => {
+          ctx.globalAlpha = s.alpha;
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+      }
+
+      function drawHUD() {
+        // Score bubble
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.beginPath();
+        ctx.roundRect(14, 14, 180, 48, 12);
+        ctx.fill();
+        ctx.fillStyle = "#ffd43b";
+        ctx.font = "bold 22px Comic Sans MS, cursive";
+        ctx.textAlign = "left";
+        ctx.fillText("⭐ " + score, 26, 46);
+
+        // Hi score
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.beginPath();
+        ctx.roundRect(canvas.width - 200, 14, 186, 48, 12);
+        ctx.fill();
+        ctx.fillStyle = "#b197fc";
+        ctx.textAlign = "right";
+        ctx.fillText("🏆 " + hiScore, canvas.width - 26, 46);
+      }
+
+      function drawStartScreen() {
+        // Overlay
+        ctx.fillStyle = "rgba(10,10,46,0.85)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Title
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#ffd43b";
+        ctx.font = "bold 64px Comic Sans MS, cursive";
+        ctx.fillText("🚀 Oster-Abenteuer! 🐣", canvas.width / 2, 160);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "30px Comic Sans MS, cursive";
+        ctx.fillText("Drücke  LEERTASTE  zum Fliegen!", canvas.width / 2, 230);
+
+        ctx.font = "22px Comic Sans MS, cursive";
+        ctx.fillStyle = "#74c0fc";
+        ctx.fillText(
+          "Weiche Hindernissen aus  •  Sammel Sterne!",
+          canvas.width / 2,
+          278,
+        );
+
+        // Animated rocket
+        const bob = Math.sin(Date.now() / 400) * 8;
+        drawFlame(canvas.width / 2 - 80, canvas.height / 2 + 50 + bob);
+        drawRocket(canvas.width / 2 - 80, canvas.height / 2 + 50 + bob, true);
+
+        // Pulsing start button
+        const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 350);
+        ctx.save();
+        ctx.translate(canvas.width / 2, 430);
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = "#ff6b6b";
+        ctx.beginPath();
+        ctx.roundRect(-120, -28, 240, 56, 16);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 26px Comic Sans MS, cursive";
+        ctx.fillText("START — Leertaste", 0, 10);
+        ctx.restore();
+      }
+
+      function drawGameOver() {
+        ctx.fillStyle = "rgba(10,10,46,0.88)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#ff6b6b";
+        ctx.font = "bold 58px Comic Sans MS, cursive";
+        ctx.fillText("🍳 Auutsch!", canvas.width / 2, 155);
+
+        ctx.fillStyle = "#ffd43b";
+        ctx.font = "36px Comic Sans MS, cursive";
+        ctx.fillText("Punkte: " + score, canvas.width / 2, 225);
+
+        if (score >= hiScore && score > 0) {
+          ctx.fillStyle = "#69db7c";
+          ctx.font = "bold 30px Comic Sans MS, cursive";
+          ctx.fillText(
+            "🏆 Neuer Rekord! Super gemacht!",
+            canvas.width / 2,
+            275,
+          );
+        }
+
+        const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 350);
+        ctx.save();
+        ctx.translate(canvas.width / 2, 380);
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = "#4dabf7";
+        ctx.beginPath();
+        ctx.roundRect(-140, -28, 280, 56, 16);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 26px Comic Sans MS, cursive";
+        ctx.fillText("Nochmal — Leertaste", 0, 10);
+        ctx.restore();
+      }
+
+      // ─── Generate asteroid points ────────────────────────────────────────────────
+      function makeAsteroidPts(r) {
+        const pts = [];
+        const n = 8 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < n; i++) {
+          const angle = (i / n) * Math.PI * 2;
+          const dist = r * (0.65 + Math.random() * 0.45);
+          pts.push({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist });
+        }
+        return pts;
+      }
+
+      function spawnObstacle() {
+        const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+        const color =
+          OBSTACLE_COLORS[Math.floor(Math.random() * OBSTACLE_COLORS.length)];
+        const size = 40 + Math.random() * 40;
+        const minY = CEILING + size / 2;
+        const maxY = FLOOR - size - 10;
+        const y = minY + Math.random() * (maxY - minY);
+        obstacles.push({
+          x: canvas.width + 10,
+          y,
+          w: size,
+          h: size,
+          shape,
+          color,
+          rot: 0,
+          rotSpeed: (Math.random() - 0.5) * 0.04,
+          pts: shape === "asteroid" ? makeAsteroidPts(size / 2) : null,
+        });
+      }
+
+      function spawnCollectible() {
+        const symbol =
+          COLLECT_SYMBOLS[Math.floor(Math.random() * COLLECT_SYMBOLS.length)];
+        const y = CEILING + 30 + Math.random() * (FLOOR - CEILING - 80);
+        collectibles.push({
+          x: canvas.width + 10,
+          y,
+          symbol,
+          phase: Math.random() * Math.PI * 2,
+          r: 22,
+        });
+      }
+
+      function spawnBunny() {
+        const y = CEILING + 50 + Math.random() * (FLOOR - CEILING - 120);
+        bunnies.push({
+          x: canvas.width + 10,
+          y,
+          phase: Math.random() * Math.PI * 2,
+          r: 36,
+        });
+      }
+
+      function drawBunny(b) {
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        // Hop animation
+        const hop = Math.abs(Math.sin(Date.now() / 220 + b.phase)) * -10;
+        ctx.translate(0, hop);
+
+        // Glow aura
+        const glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 48);
+        glow.addColorStop(0, "rgba(255,180,255,0.55)");
+        glow.addColorStop(1, "rgba(255,180,255,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, 48, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.ellipse(0, 10, 18, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#e0a0e0";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Head
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.arc(0, -16, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#e0a0e0";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Left ear
+        ctx.fillStyle = "#f8d7f8";
+        ctx.beginPath();
+        ctx.ellipse(-6, -34, 5, 13, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#ffb3d9";
+        ctx.beginPath();
+        ctx.ellipse(-6, -34, 2.5, 9, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Right ear
+        ctx.fillStyle = "#f8d7f8";
+        ctx.strokeStyle = "#e0a0e0";
+        ctx.beginPath();
+        ctx.ellipse(6, -34, 5, 13, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#ffb3d9";
+        ctx.beginPath();
+        ctx.ellipse(6, -34, 2.5, 9, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes
+        ctx.fillStyle = "#5c2d91";
+        ctx.beginPath();
+        ctx.arc(-5, -18, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(5, -18, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Eye shine
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(-4, -19, 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(6, -19, 1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Nose
+        ctx.fillStyle = "#ff87b2";
+        ctx.beginPath();
+        ctx.arc(0, -13, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Smile
+        ctx.strokeStyle = "#c060a0";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, -12, 4, 0.1, Math.PI - 0.1);
+        ctx.stroke();
+
+        // Little basket with egg
+        ctx.fillStyle = "#c8a96e";
+        ctx.beginPath();
+        ctx.ellipse(14, 8, 9, 7, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#9e7a3e";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Egg in basket
+        ctx.fillStyle = "#ff6b9d";
+        ctx.beginPath();
+        ctx.ellipse(14, 3, 5, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffd43b";
+        ctx.beginPath();
+        ctx.ellipse(14, 2, 2, 1.5, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // +10 badge
+        ctx.fillStyle = "#ffd43b";
+        ctx.beginPath();
+        ctx.roundRect(16, -30, 32, 18, 6);
+        ctx.fill();
+        ctx.fillStyle = "#7b2fff";
+        ctx.font = "bold 13px Comic Sans MS, cursive";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("+10", 32, -21);
+
+        ctx.restore();
+      }
+
+      // ─── Collision (AABB with generous margin for fun) ───────────────────────────
+      function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+        const margin = 10;
+        return (
+          ax + margin < bx + bw - margin &&
+          ax + aw - margin > bx + margin &&
+          ay + margin < by + bh - margin &&
+          ay + ah - margin > by + margin
+        );
+      }
+
+      // ─── Main Loop ───────────────────────────────────────────────────────────────
+      function loop(ts) {
+        const dt = lastTime ? Math.min((ts - lastTime) / 16.67, 3) : 1;
+        lastTime = ts;
+
+        // Scroll stars
+        stars.forEach((s) => {
+          s.x -= s.speed * dt;
+          if (s.x < 0) {
+            s.x = canvas.width;
+            s.y = Math.random() * canvas.height;
+          }
+        });
+
+        // ── Background ──
+        const bgGrd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bgGrd.addColorStop(0, "#05051a");
+        bgGrd.addColorStop(1, "#0f0a30");
+        ctx.fillStyle = bgGrd;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (gameState === "start") {
+          drawStars();
+          drawStartScreen();
+          requestAnimationFrame(loop);
+          return;
+        }
+
+        if (gameState === "gameover") {
+          drawStars();
+          drawGround();
+          drawGameOver();
+          requestAnimationFrame(loop);
+          return;
+        }
+
+        // ── Playing ──
+        distance += speed * dt;
+        speed = 3.5 + distance / 3000;
+
+        // Spawn
+        nextObstacleIn -= dt;
+        nextCollectIn -= dt;
+        if (nextObstacleIn <= 0) {
+          spawnObstacle();
+          nextObstacleIn =
+            Math.max(55, 110 - distance / 200) + Math.random() * 30;
+        }
+        if (nextCollectIn <= 0) {
+          spawnCollectible();
+          nextCollectIn = 35 + Math.random() * 25;
+        }
+        nextBunnyIn -= dt;
+        if (nextBunnyIn <= 0) {
+          spawnBunny();
+          nextBunnyIn = 400 + Math.random() * 350;
+        }
+
+        // Rocket physics
+        if (rocket.alive) {
+          rocket.vy += GRAVITY * dt;
+          rocket.y += rocket.vy * dt;
+          if (rocket.invincible > 0) rocket.invincible -= dt;
+        }
+
+        // Floor / ceiling
+        if (rocket.y + rocket.height >= FLOOR) {
+          rocket.y = FLOOR - rocket.height;
+          if (rocket.vy > 2) die();
+          else rocket.vy = 0;
+        }
+        if (rocket.y <= CEILING) {
+          rocket.y = CEILING;
+          rocket.vy = 1;
+        }
+
+        // Trail
+        rocket.trail.push({
+          x: rocket.x + 14,
+          y: rocket.y + rocket.height / 2,
+          life: 1,
+        });
+        if (rocket.trail.length > 22) rocket.trail.shift();
+        rocket.trail.forEach((t) => (t.life -= 0.05 * dt));
+
+        // Move obstacles & collectibles
+        obstacles.forEach((ob) => {
+          ob.x -= speed * dt;
+          ob.rot += ob.rotSpeed * dt;
+        });
+        collectibles.forEach((c) => {
+          c.x -= speed * dt;
+        });
+        bunnies.forEach((b) => {
+          b.x -= speed * dt;
+        });
+
+        // Remove off-screen
+        obstacles = obstacles.filter((ob) => ob.x + ob.w > -20);
+        collectibles = collectibles.filter((c) => c.x > -30);
+        bunnies = bunnies.filter((b) => b.x > -80);
+
+        // Collision check
+        if (rocket.alive && rocket.invincible <= 0) {
+          for (const ob of obstacles) {
+            if (
+              rectsOverlap(
+                rocket.x - 18,
+                rocket.y,
+                rocket.width,
+                rocket.height,
+                ob.x,
+                ob.y,
+                ob.w,
+                ob.h,
+              )
+            ) {
+              spawnParticles(rocket.x + 20, rocket.y + 12, ob.color, 20);
+              die();
+              break;
+            }
+          }
+          for (let i = collectibles.length - 1; i >= 0; i--) {
+            const c = collectibles[i];
+            const cx = c.x - (rocket.x + 18),
+              cy = c.y - (rocket.y + 12);
+            if (Math.sqrt(cx * cx + cy * cy) < c.r + 20) {
+              score++;
+              if (score > hiScore) {
+                hiScore = score;
+                localStorage.setItem("rocketHiScore", hiScore);
+              }
+              playCollect();
+              spawnParticles(c.x, c.y, "#ffd43b", 16);
+              collectibles.splice(i, 1);
+            }
+          }
+          for (let i = bunnies.length - 1; i >= 0; i--) {
+            const b = bunnies[i];
+            const dx = b.x - (rocket.x + 18),
+              dy = b.y - (rocket.y + 12);
+            if (Math.sqrt(dx * dx + dy * dy) < b.r + 22) {
+              score += 10;
+              if (score > hiScore) {
+                hiScore = score;
+                localStorage.setItem("rocketHiScore", hiScore);
+              }
+              playBunny();
+              for (let k = 0; k < 5; k++)
+                spawnParticles(
+                  b.x,
+                  b.y,
+                  ["#ff87ca", "#ffd43b", "#b197fc", "#69db7c"][k % 4],
+                  8,
+                );
+              bunnies.splice(i, 1);
+              flashTimer = 12;
+            }
+          }
+        }
+
+        // Update particles
+        particles.forEach((p) => {
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vy += 0.1 * dt;
+          p.life -= p.decay * dt;
+        });
+        particles = particles.filter((p) => p.life > 0);
+
+        // Flash timer
+        if (flashTimer > 0) flashTimer -= dt;
+        if (shakeTimer > 0) shakeTimer -= dt;
+
+        // ── Draw ──
+        ctx.save();
+        if (shakeTimer > 0) {
+          const sx = (Math.random() - 0.5) * shakeAmp * (shakeTimer / 15);
+          const sy = (Math.random() - 0.5) * shakeAmp * (shakeTimer / 15);
+          ctx.translate(sx, sy);
+        }
+
+        drawStars();
+        drawGround();
+
+        // Trail
+        rocket.trail.forEach((t, i) => {
+          const alpha = t.life * 0.5 * (i / rocket.trail.length);
+          ctx.globalAlpha = Math.max(0, alpha);
+          ctx.fillStyle = "#ff9a3c";
+          ctx.beginPath();
+          ctx.arc(
+            t.x - 8,
+            t.y,
+            (i / rocket.trail.length) * 8 + 2,
+            0,
+            Math.PI * 2,
+          );
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        // Collectibles
+        collectibles.forEach(drawCollectible);
+        // Bunnies
+        bunnies.forEach(drawBunny);
+        // Obstacles
+        obstacles.forEach(drawObstacle);
+
+        // Flame & Rocket
+        if (rocket.alive) {
+          drawFlame(rocket.x, rocket.y);
+          drawRocket(rocket.x, rocket.y, true);
+        } else {
+          drawCookedEgg(rocket.x, rocket.y);
+        }
+
+        // Particles
+        particles.forEach((p) => {
+          ctx.globalAlpha = p.life;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        // Flash overlay (on collect)
+        if (flashTimer > 0 && flashTimer < 8) {
+          ctx.globalAlpha = (flashTimer / 8) * 0.25;
+          ctx.fillStyle = "#ffd43b";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.globalAlpha = 1;
+        }
+
+        ctx.restore();
+
+        drawHUD();
+
+        requestAnimationFrame(loop);
+      }
+
+      function die() {
+        if (!rocket.alive) return;
+        rocket.alive = false;
+        rocket.vy = -5;
+        playCrash();
+        shakeTimer = 18;
+        shakeAmp = 14;
+        spawnParticles(rocket.x + 20, rocket.y + 10, "#ff6b6b", 30);
+        spawnParticles(rocket.x + 20, rocket.y + 10, "#ffa94d", 20);
+        setTimeout(() => {
+          if (score > hiScore) {
+            hiScore = score;
+            localStorage.setItem("rocketHiScore", hiScore);
+          }
+          gameState = "gameover";
+        }, 900);
+      }
+
+      // ─── Input ───────────────────────────────────────────────────────────────────
+      function onSpace(e) {
+        if (e.code === "Space" || e.key === " ") {
+          e.preventDefault();
+          audioCtx.resume();
+
+          if (gameState === "start" || gameState === "gameover") {
+            initGame();
+            return;
+          }
+          if (gameState === "playing" && rocket.alive) {
+            rocket.vy = BOOST;
+            playBoost();
+            spawnParticles(
+              rocket.x - 15,
+              rocket.y + rocket.height,
+              "#ffa94d",
+              6,
+            );
+          }
+        }
+      }
+
+      // Mobile / touch support — tap anywhere = spacebar
+      canvas.addEventListener(
+        "touchstart",
+        (e) => {
+          e.preventDefault();
+          audioCtx.resume();
+          if (gameState === "start" || gameState === "gameover") {
+            initGame();
+            return;
+          }
+          if (gameState === "playing" && rocket.alive) {
+            rocket.vy = BOOST;
+            playBoost();
+            spawnParticles(
+              rocket.x - 15,
+              rocket.y + rocket.height,
+              "#ffa94d",
+              6,
+            );
+          }
+        },
+        { passive: false },
+      );
+
+      document.addEventListener("keydown", onSpace);
+
+      // ─── Boot ────────────────────────────────────────────────────────────────────
+      hiScore = parseInt(localStorage.getItem("rocketHiScore") || "0", 10);
+      gameState = "start";
+      lastTime = null;
+
+      // Fake rocket for start screen background
+      rocket = {
+        x: 120,
+        y: canvas.height / 2,
+        vy: 0,
+        width: 54,
+        height: 34,
+        trail: [],
+        invincible: 0,
+        alive: true,
+      };
+
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>
